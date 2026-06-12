@@ -206,4 +206,77 @@ class Gerat58StateEngine:
         return {
             "firing_status": "SUCCESSFUL 55mm DISCHARGE",
             "calculated_lead_deg": lead_correction,
-            "inducted_fuze_time
+            "inducted_fuze_time_sec": fuze_time,
+            "recoil_force_kn": force_profile["force_kn"],
+            "oil_pumped": oil_status["oil_pumped"],
+            "oil_level_pct": oil_status["oil_level_remaining_pct"]
+        }
+
+def perform_oil_system_maintenance(state_engine: Gerat58StateEngine) -> bool:
+    """Steps the visitor through bleeding the system and refilling the 4.5L oil reservoir."""
+    print("LUFTWAFFE FLAK WERKSTATT - OIL RESERVOIR REFRESH PROTOCOL")
+    
+    if state_engine.current_mode != "MAINTENANCE":
+        print("MAINTENANCE ABORTED! CRITICAL SAFETY RISK: Cannot open high-pressure lines outside of MAINTENANCE mode.")
+        return False
+        
+    print("Condition Verified: Weapon safely isolated from servo power.")
+    time.sleep(0.5)
+
+    print("[STEP 1/4] Isolating electrical systems...")
+    state_engine.actuate_control("7_main_power_switch", False)
+    print("Feature 7: Main Power Switch flipped to OFF.")
+    time.sleep(0.5)
+
+    print("[STEP 2/4] Purging residual pneumatic and fluid pressures...")
+    state_engine.actuate_control("12_recoil_buffer_valve", "OPEN")
+    state_engine.oiler.current_oil_level_liters = 0.0
+    print("System lines blown out.")
+    time.sleep(0.5)
+
+    print("[STEP 3/4] Clearing injection nozzle ports...")
+    state_engine.oiler.injection_nozzles_clear = True
+    print("Injection nozzles blown clear with dry air back-pressure.")
+    time.sleep(0.5)
+
+    print("[STEP 4/4] Pumping new hydraulic lubricant into reservoir...")
+    state_engine.oiler.current_oil_level_liters = state_engine.oiler.max_capacity_liters
+    state_engine.oiler.oil_viscosity_nominal = True
+    print("Fluid replaced.")
+    
+    print("[COMPLETING TASK] Securing structural access hatches...")
+    state_engine.actuate_control("12_recoil_buffer_valve", "CLOSED")
+    print("MAINTENANCE SUCCESSFUL: Lubrication Subsystem Remanufactured!")
+    return True
+
+def run_museum_interactive_demo():
+    print("RHEINMETALL GERAT 58 ANTI-AIRCRAFT SYSTEM INTERACTIVE ENGINE")
+    
+    gun = Gerat58StateEngine()
+    ballistic_cam = MechanicalBallisticCam()
+    
+    gun.oiler.current_oil_level_liters = 0.002
+    
+    print("DEPLOYING WEAPON SYSTEM")
+    print(gun.actuate_control("13_travel_lock_clamp", False))
+    print(gun.actuate_control("14_outrigger_jacks", "DEPLOYED"))
+    print(gun.change_system_mode("COMBAT"))
+    print(gun.actuate_control("3_pneumatic_charging_lever", True))
+    
+    print("EXECUTING COMBAT FIRING LOOP")
+    print("[Trigger Depressed] Firing Round 1...")
+    report1 = gun.process_firing_sequence(ballistic_cam, 5000.0, 30.0)
+    print(f"Status: {report1['firing_status']}")
+    
+    gun.actuate_control("3_pneumatic_charging_lever", True)
+    
+    print("[Trigger Depressed] Firing Round 2...")
+    report2 = gun.process_firing_sequence(ballistic_cam, 4800.0, 32.0)
+    print(f"Status: {report2['firing_status']}")
+    print(f"Reason: {report2.get('reason', 'None')}")
+    
+    print("VISITOR MAINTENANCE INTERVENTION REQUIRED")
+    perform_oil_system_maintenance(gun)
+
+if __name__ == "__main__":
+    run_museum_interactive_demo()
