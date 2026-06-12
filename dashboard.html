@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kommandogerat-58 Remote Interface Console</title>
+    <style>
+        :root {
+            --bg-color: rgb(11, 15, 18);
+            --panel-bg: rgb(18, 24, 29);
+            --accent-color: rgb(0, 255, 102);
+            --text-main: rgb(209, 215, 222);
+            --text-dim: rgb(112, 126, 138);
+            --alert-color: rgb(255, 59, 48);
+        }
+        body {
+            margin: 0;
+            padding: 20px;
+            background-color: var(--bg-color);
+            font-family: 'Courier New', Courier, monospace;
+            color: var(--text-main);
+            overflow: hidden;
+        }
+        .container {
+            display: flex;
+            gap: 20px;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .panel {
+            background-color: var(--panel-bg);
+            padding: 20px;
+            border: 1px solid var(--accent-color);
+            border-radius: 8px;
+        }
+        .canvas-container {
+            flex: 2;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        canvas {
+            background-color: rgb(0, 0, 0);
+            border: 1px solid var(--text-dim);
+            border-radius: 50%;
+            margin-bottom: 20px;
+        }
+        .status-container {
+            flex: 1;
+        }
+        .data-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 10px;
+            border-bottom: 1px solid var(--text-dim);
+            padding-bottom: 5px;
+        }
+        .status-indicator {
+            color: var(--alert-color);
+            font-weight: bold;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="panel canvas-container">
+            <h2>RADAR AZIMUTH TRACKING</h2>
+            <canvas data-id="radarCanvas" width="400" height="400"></canvas>
+            <h2>ELEVATION PITCH</h2>
+            <div style="width: 100%; height: 20px; background-color: rgb(0,0,0); border: 1px solid rgb(0, 255, 102); position: relative;">
+                <div data-id="pitchIndicator" style="width: 10px; height: 100%; background-color: rgb(0, 255, 102); position: absolute; left: 0%; transition: left 0.2s;"></div>
+            </div>
+        </div>
+        <div class="panel status-container">
+            <h2>SYSTEM TELEMETRY</h2>
+            <div class="data-row">
+                <span>Target Azimuth:</span>
+                <span data-id="val-azimuth">0.0 deg</span>
+            </div>
+            <div class="data-row">
+                <span>Target Elevation:</span>
+                <span data-id="val-elevation">0.0 deg</span>
+            </div>
+            <div class="data-row">
+                <span>Cork Cap Actuator:</span>
+                <span data-id="val-cork">UNKNOWN</span>
+            </div>
+            <div class="data-row">
+                <span>Grid Power:</span>
+                <span data-id="val-power">110.0 V</span>
+            </div>
+            <div class="status-indicator" data-id="netIndicator">
+                SYSTEM OFFLINE: WAITING FOR SOCKET
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.querySelector('[data-id="radarCanvas"]');
+        const ctx = canvas.getContext('2d');
+        const pitchIndicator = document.querySelector('[data-id="pitchIndicator"]');
+        
+        const azSpan = document.querySelector('[data-id="val-azimuth"]');
+        const elSpan = document.querySelector('[data-id="val-elevation"]');
+        const corkSpan = document.querySelector('[data-id="val-cork"]');
+        const powerSpan = document.querySelector('[data-id="val-power"]');
+        const netInd = document.querySelector('[data-id="netIndicator"]');
+
+        let currentAzimuth = 0;
+        let currentElevation = 0;
+
+        function drawVectorGraph() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            ctx.beginPath();
+            ctx.arc(200, 200, 180, 0, 2 * Math.PI);
+            ctx.strokeStyle = 'rgb(112, 126, 138)';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+
+            ctx.beginPath();
+            ctx.moveTo(200, 20);
+            ctx.lineTo(200, 380);
+            ctx.moveTo(20, 200);
+            ctx.lineTo(380, 200);
+            ctx.stroke();
+
+            const rad = (currentAzimuth - 90) * (Math.PI / 180);
+            const x = 200 + 180 * Math.cos(rad);
+            const y = 200 + 180 * Math.sin(rad);
+
+            ctx.beginPath();
+            ctx.moveTo(200, 200);
+            ctx.lineTo(x, y);
+            ctx.strokeStyle = 'rgb(0, 255, 102)';
+            ctx.lineWidth = 3;
+            ctx.stroke();
+
+            ctx.beginPath();
+            ctx.arc(x, y, 6, 0, 2 * Math.PI);
+            ctx.fillStyle = 'rgb(0, 255, 102)';
+            ctx.fill();
+        }
+
+        async function fetchSystemTelemetry() {
+            try {
+                const response = await fetch('http://localhost:8080/status');
+                if (!response.ok) {
+                    throw new Error("Network response not ok");
+                }
+                const data = await response.json();
+                
+                netInd.innerText = "DATA LINK CONNECTED LIVE";
+                netInd.style.color = "rgb(0, 255, 102)";
+
+                if (data.target_azimuth) {
+                    currentAzimuth = data.target_azimuth;
+                }
+                if (data.target_elevation) {
+                    currentElevation = data.target_elevation;
+                }
+
+                azSpan.innerText = currentAzimuth.toFixed(2) + " deg";
+                elSpan.innerText = currentElevation.toFixed(2) + " deg";
+                
+                if (data.active_controls_matrix) {
+                    corkSpan.innerText = data.active_controls_matrix["18_desiccant_cap_vent_actuator"] || "UNKNOWN";
+                }
+
+                const pitchPercent = Math.min(Math.max((currentElevation / 90) * 100, 0), 100);
+                pitchIndicator.style.left = pitchPercent + "%";
+
+                drawVectorGraph();
+            } catch (error) {
+                netInd.innerText = "BUS OFFLINE: RETRYING SOCKET ATTACHMENT...";
+                netInd.style.color = "rgb(255, 59, 48)";
+            }
+        }
+
+        setInterval(fetchSystemTelemetry, 500);
+        drawVectorGraph();
+    </script>
+</body>
+</html>
