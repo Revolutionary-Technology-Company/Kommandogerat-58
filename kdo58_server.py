@@ -3,7 +3,14 @@ import json
 import math
 import time
 from typing import Dict, Tuple
+import nidaqmx
 
+def read_kabelverteiler():
+    with nidaqmx.Task() as task:
+        # Add all 16 channels from slot 1
+        task.ai_channels.add_ai_voltage_chan("cDAQ1Mod1/ai0:15")
+        data = task.read()
+        return data
 class Kommandogerat58Receiver:
     def __init__(self, host: str = "0.0.0.0", port: int = 1958):
         self.host = host
