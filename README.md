@@ -20,34 +20,28 @@ To safely reconstruct the data flow, the 16 physical connections are explicitly 
 
 **Sensor Input Channels (Radar to Computer)**
 
-* 
-**C1 - C3:** Raw Radar/Optical Target Azimuth ($\alpha$), Elevation ($\epsilon$), and Slant Range ($D$).
+* **C1 - C3:** Raw Radar/Optical Target Azimuth ($\alpha$), Elevation ($\epsilon$), and Slant Range ($D$).
 
 
 
 **Command Outputs (Computer to Guns)**
 
-* 
-**C4 - C7:** Coarse and Fine Azimuth target tracking command angles ($\alpha_{gun}$) for Guns 1–4.
+* **C4 - C7:** Coarse and Fine Azimuth target tracking command angles ($\alpha_{gun}$) for Guns 1–4.
 
 
-* 
-**C8 - C11:** Coarse and Fine Elevation target tracking command angles ($\epsilon_{gun}$) for Guns 1–4.
+* **C8 - C11:** Coarse and Fine Elevation target tracking command angles ($\epsilon_{gun}$) for Guns 1–4.
 
 
-* 
-**C12 - C14:** Mechanical Fuse Setter Times ($\tau$) transmitted to the automatic barrel-load tray.
+* **C12 - C14:** Mechanical Fuse Setter Times ($\tau$) transmitted to the automatic barrel-load tray.
 
 
 
 **Tactical and Synchronization Lines**
 
-* 
-**C15:** Command to Fire, Salvo Interrupts, and Battery Ready Interlocks.
+* **C15:** Command to Fire, Salvo Interrupts, and Battery Ready Interlocks.
 
 
-* 
-**C16:** 3-Phase AC Reference Voltage (typically 110V/400Hz) used to maintain angular synchronization across all Selsyns.
+* **C16:** 3-Phase AC Reference Voltage (typically 110V/400Hz) used to maintain angular synchronization across all Selsyns.
 
 
 
