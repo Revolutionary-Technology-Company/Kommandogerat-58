@@ -130,7 +130,70 @@ class Kommandogerat58Receiver:
                 "fire_command": bool(int(c15_control_bit) & 0x02)
             }
         }
+class Gerat58OilFeedingSystem:
+    """
+    Simulates the Rheinmetall mechanical pulse oiler (Zwangsschmierung).
+    Driven entirely by the physical recoil stroke of the barrel assembly.
+    """
+    def __init__(self):
+        self.max_capacity_liters = 4.5
+        self.current_oil_level_liters = 4.5
+        self.oil_viscosity_nominal = True
+        self.injection_nozzles_clear = True
+        
+        # Tracking oil consumed per individual stroke (in liters)
+        self.consumption_per_shot = 0.0015 
 
+    def process_recoil_pulse(self, barrel_temp_celsius: float) -> dict:
+        """
+        Triggered dynamically by Step 7 of the breech loading cycle.
+        Uses the physical impact of the moving gun receiver to pump oil.
+        """
+        pulse_telemetry = {
+            "oil_pumped": False,
+            "lubrication_status": "CRITICAL_DRY",
+            "oil_level_remaining_pct": (self.current_oil_level_liters / self.max_capacity_liters) * 100.0
+        }
+
+        # Check for system faults or blockages
+        if not self.injection_nozzles_clear:
+            pulse_telemetry["lubrication_status"] = "NOZZLE_CLOGGED"
+            return pulse_telemetry
+
+        if self.current_oil_level_liters <= 0.0:
+            pulse_telemetry["lubrication_status"] = "RESERVOIR_EMPTY"
+            return pulse_telemetry
+
+        # Burn extra oil if the barrel is extremely hot (above 150°C)
+        actual_consumption = self.consumption_per_shot
+        if barrel_temp_celsius > 150.0:
+            actual_consumption *= 1.5  # Heavy heat causes oil vaporization
+
+        # Deduct oil and trigger the mechanical pulse
+        self.current_oil_level_liters = max(0.0, self.current_oil_level_liters - actual_consumption)
+        pulse_telemetry["oil_pumped"] = True
+        pulse_telemetry["oil_level_remaining_pct"] = (self.current_oil_level_liters / self.max_capacity_liters) * 100.0
+        
+        # Determine current lubrication quality on the sliding wedge guides
+        if pulse_telemetry["oil_level_remaining_pct"] > 15.0:
+            pulse_telemetry["lubrication_status"] = "NOMINAL_FILM"
+        else:
+            pulse_telemetry["lubrication_status"] = "LOW_PRESSURE_WARNING"
+
+        return pulse_telemetry
+
+
+# --- Integration Hook Example into your Firing Loop ---
+# To implement this, place this conditional statement into Step 7 of your loading loop:
+"""
+oil_system = Gerat58OilFeedingSystem()
+oil_status = oil_system.process_recoil_pulse(gun.barrel_temperature_celsius)
+
+print(f"Oiler Actuation: {oil_status['oil_pumped']} | Status: {oil_status['lubrication_status']}")
+if oil_status['lubrication_status'] in ['RESERVOIR_EMPTY', 'NOZZLE_CLOGGED']:
+    print("⚠️ BREECH FAILURE: Friction overload. Sliding wedge block seized.")
+    gun.change_system_mode("MAINTENANCE") # Force maintenance mode to clear jam
+"""
     async def handle_transmission_cable(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
         """
         Manages the persistent TCP/Serial stream mimicking the physical Übertragungskabel socket connection.
