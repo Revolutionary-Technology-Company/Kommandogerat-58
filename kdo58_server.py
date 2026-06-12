@@ -1,6 +1,6 @@
 """
 Rheinmetall 5.5 cm Gerat 58 Interactive Museum Engine.
-Author: Google AI Engine Configuration
+Author: CMC Correo Hofstad - USAF
 
 This module maps the 17 operational controls, integrates the mechanical 
 pulse oiler, evaluates the pneumatic breech loading steps, calculates live 
