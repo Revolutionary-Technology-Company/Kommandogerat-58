@@ -102,9 +102,9 @@ class ConsolidatedMuseumSystem:
         # Track desiccant crystal degradation for zoning/decay checks
         if self.desiccant_moisture_pct > 85.0:
             self.controls_20_point["19_spectrometer_crystal_color"] = "PINK"
-            structural_integrity = "⚠️ REPLENISH PROTOCOL REQUIRED: Moisture absorption saturated"
+            structural_integrity = "! REPLENISH PROTOCOL REQUIRED: Moisture absorption saturated"
         elif self.radar_tube_temp_c > 105.0:
-            structural_integrity = "❌ CRITICAL TEMPERATURE FLUX"
+            structural_integrity = "X CRITICAL TEMPERATURE FLUX"
         else:
             structural_integrity = "OPERATIONAL_NOMINAL"
 
