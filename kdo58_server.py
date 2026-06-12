@@ -1,50 +1,24 @@
-import asyncio
-import json
-import math
+"""
+Rheinmetall 5.5 cm Gerat 58 Interactive Museum Engine.
+Author: Google AI Engine Configuration
+
+This module maps the 17 operational controls, integrates the mechanical 
+pulse oiler, evaluates the pneumatic breech loading steps, calculates live 
+ballistic force profiles, and includes the interactive maintenance mode sequence.
+"""
+
 import time
-from typing import Dict, Tuple
-import nidaqmx
+import math
+import sys
+from typing import Dict, Any, Tuple
 
-def verify_loading_step(current_step: str, hardware_sensors: dict) -> tuple[bool, str]:
-    """
-    Ensures museum visitor triggers loading mechanics in strict chronological order.
-    """
-    if current_step == "RAMMING":
-        if hardware_sensors["breech_block"] != "DOWN_OPEN":
-            return False, "❌ RAMMING BLOCKED: Breech wedge must be fully down and open before a round can enter."
-        if not hardware_sensors["compressed_air_charged"]:
-            return False, "❌ PNEUMATIC FAILURE: Accumulator flask pressure is too low to drive the rammer shoe."
-        return True, "✅ RAMMER ENGAGED: Pneumatic piston driving round forward into chamber."
+def calculate_ballistic_force(mass_kg: float, velocity_m_s: float, barrel_len_m: float = 4.2) -> Dict[str, float]:
+    """Computes muzzle energy and internal acceleration force profiles."""
+    if barrel_len_m <= 0:
+        return {"energy_mj": 0.0, "force_kn": 0.0, "force_tons": 0.0}
         
-    elif current_step == "BREECH_CLOSE":
-        if not hardware_sensors["extractor_claws_tripped"]:
-            return False, "❌ BREECH JAM: Cartridge rim did not hit extractors with enough velocity to release the lock."
-        return True, "✅ SNAP: Vertical wedge block locked home. Firing pin spring compressed."
-
-    return True, "Step Verified"
-
-
-def read_kabelverteiler():
-    with nidaqmx.Task() as task:
-        # Add all 16 channels from slot 1
-        task.ai_channels.add_ai_voltage_chan("cDAQ1Mod1/ai0:15")
-        data = task.read()
-        return data
-
-import serial
-
-def calculate_ballistic_force(mass_kg: float, velocity_m_s: float, barrel_len_m: float = 4.2):
-    """
-    Computes muzzle energy and internal acceleration force profiles 
-    for the 5.5 cm Flak terminal calculator display.
-    """
-    # Kinetic Energy: Ek = 0.5 * m * v^2
     kinetic_energy_joules = 0.5 * mass_kg * (velocity_m_s ** 2)
-    
-    # Work-Energy Theorem: Force = Energy / Distance
     average_force_newtons = kinetic_energy_joules / barrel_len_m
-    
-    # Convert to standard structural metric tons of force for readability
     force_tons = average_force_newtons / 9806.65
     
     return {
@@ -53,109 +27,39 @@ def calculate_ballistic_force(mass_kg: float, velocity_m_s: float, barrel_len_m:
         "force_tons": force_tons
     }
 
-# Interactive Museum Test Printout
-specs = calculate_ballistic_force(mass_kg=2.03, velocity_m_s=1050.0)
-print(f"Muzzle Energy Output     : {specs['energy_mj']:.2f} Megajoules")
-print(f"Recoil Impulse Force     : {specs['force_kn']:.1f} kN")
-print(f"Structural Weight Stress : {specs['force_tons']:.1f} Metric Tons of Force")
+class MechanicalBallisticCam:
+    """Simulates the physical 3D Ballistic Cams (Kurvenkorper) found inside the analog computer."""
+    def __init__(self):
+        self.muzzle_velocity_m_s = 1050.0
+        self.projectile_mass_kg = 2.03
 
-def read_msp500():
-    # Typically bound as ttyS1 or ttyUSB0 depending on NI-VISA config
-    ser = serial.Serial('/dev/ttyS1', baudrate=19200)
-    while True:
-        byte = ser.read()
-        # Implement 0x02 STX parsing logic here
+    def read_cam_geometry(self, slant_range_meters: float, target_elevation_deg: float) -> Tuple[float, float]:
+        if slant_range_meters <= 0:
+            return 0.0, 0.0
+            
+        el_rad = math.radians(target_elevation_deg)
+        time_of_flight_sec = slant_range_meters / (self.muzzle_velocity_m_s * math.cos(el_rad) * 0.92)
+        gravity_drop_meters = 0.5 * 9.81 * (time_of_flight_sec ** 2)
+        elevation_correction_deg = math.degrees(math.atan2(gravity_drop_meters, slant_range_meters))
+        fuze_delay_seconds = time_of_flight_sec + 0.15
+        return elevation_correction_deg, fuze_delay_seconds
 
-class Kommandogerat58Receiver:
-    def __init__(self, host: str = "0.0.0.0", port: int = 1958):
-        self.host = host
-        self.port = port
-        self.running = False
-        
-        # Internal state buffer representing decoded tracking telemetry
-        self.telemetry_state = {
-            "timestamp": 0.0,
-            "radar_inputs": {"azimuth": 0.0, "elevation": 0.0, "range": 0.0},
-            "gun_commands": {"azimuth": 0.0, "elevation": 0.0, "fuse_setting": 0.0},
-            "battery_status": {"ready_interlock": False, "fire_command": False}
-        }
-
-    def decode_selsyn_pair(self, coarse_deg: float, fine_deg: float, gear_ratio: float = 36.0) -> float:
-        """
-        Reconstructs high-precision angles from the historical multi-speed transmission lines.
-        Cables combined a 1:1 Coarse line with a 1:36 Fine precision line to avoid data slippage.
-        """
-        # Estimate coarse sector block
-        coarse_sector = math.floor(coarse_deg / (360.0 / gear_ratio))
-        # Reconstruct the absolute target position
-        true_angle = (coarse_sector * (360.0 / gear_ratio)) + (fine_deg / gear_ratio)
-        return true_angle % 360.0
-
-    def parse_kabelverteiler_stream(self, raw_frame: bytes) -> Dict:
-        """
-        Simulates parsing a 64-byte structural frame reading from the 16 main lines via ADC hardware.
-        """
-        if len(raw_frame) < 64:
-            return {}
-
-        # Unpack raw analog-to-digital mappings from the Kabelverteiler pins
-        # (Assuming structured float arrays mapping to specific cable banks)
-        import struct
-        unpacked_data = struct.unpack("!16f", raw_frame)
-        
-        # Mapping incoming channels corresponding to distribution topology
-        c1_raw_az, c2_raw_el, c3_raw_rng = unpacked_data[0:3]
-        c4_gun_az_c, c5_gun_az_f, c8_gun_el_c, c9_gun_el_f = unpacked_data[3:7]
-        c12_fuse_time = unpacked_data[11]
-        c15_control_bit = unpacked_data[14]
-
-        # Resolution calculations
-        true_gun_az = self.decode_selsyn_pair(c4_gun_az_c, c5_gun_az_f, gear_ratio=36.0)
-        true_gun_el = self.decode_selsyn_pair(c8_gun_el_c, c9_gun_el_f, gear_ratio=36.0)
-
-        return {
-            "timestamp": time.time(),
-            "radar_inputs": {
-                "azimuth": round(c1_raw_az, 4),
-                "elevation": round(c2_raw_el, 4),
-                "range": round(c3_raw_rng, 2)
-            },
-            "gun_commands": {
-                "azimuth": round(true_gun_az, 4),
-                "elevation": round(true_gun_el, 4),
-                "fuse_setting": round(c12_fuse_time, 3)
-            },
-            "battery_status": {
-                "ready_interlock": bool(int(c15_control_bit) & 0x01),
-                "fire_command": bool(int(c15_control_bit) & 0x02)
-            }
-        }
 class Gerat58OilFeedingSystem:
-    """
-    Simulates the Rheinmetall mechanical pulse oiler (Zwangsschmierung).
-    Driven entirely by the physical recoil stroke of the barrel assembly.
-    """
+    """Simulates the Rheinmetall mechanical pulse oiler."""
     def __init__(self):
         self.max_capacity_liters = 4.5
         self.current_oil_level_liters = 4.5
         self.oil_viscosity_nominal = True
         self.injection_nozzles_clear = True
-        
-        # Tracking oil consumed per individual stroke (in liters)
         self.consumption_per_shot = 0.0015 
 
     def process_recoil_pulse(self, barrel_temp_celsius: float) -> dict:
-        """
-        Triggered dynamically by Step 7 of the breech loading cycle.
-        Uses the physical impact of the moving gun receiver to pump oil.
-        """
         pulse_telemetry = {
             "oil_pumped": False,
             "lubrication_status": "CRITICAL_DRY",
-            "oil_level_remaining_pct": (self.current_oil_level_liters / self.max_capacity_liters) * 100.0
+            "oil_level_remaining_pct": 0.0
         }
 
-        # Check for system faults or blockages
         if not self.injection_nozzles_clear:
             pulse_telemetry["lubrication_status"] = "NOZZLE_CLOGGED"
             return pulse_telemetry
@@ -164,79 +68,142 @@ class Gerat58OilFeedingSystem:
             pulse_telemetry["lubrication_status"] = "RESERVOIR_EMPTY"
             return pulse_telemetry
 
-        # Burn extra oil if the barrel is extremely hot (above 150°C)
         actual_consumption = self.consumption_per_shot
         if barrel_temp_celsius > 150.0:
-            actual_consumption *= 1.5  # Heavy heat causes oil vaporization
+            actual_consumption = actual_consumption * 1.5 
 
-        # Deduct oil and trigger the mechanical pulse
         self.current_oil_level_liters = max(0.0, self.current_oil_level_liters - actual_consumption)
         pulse_telemetry["oil_pumped"] = True
         pulse_telemetry["oil_level_remaining_pct"] = (self.current_oil_level_liters / self.max_capacity_liters) * 100.0
         
-        # Determine current lubrication quality on the sliding wedge guides
-        if pulse_telemetry["oil_level_remaining_pct"] > 15.0:
-            pulse_telemetry["lubrication_status"] = "NOMINAL_FILM"
-        else:
+        if pulse_telemetry["oil_level_remaining_pct"] <= 15.0:
             pulse_telemetry["lubrication_status"] = "LOW_PRESSURE_WARNING"
+            return pulse_telemetry
 
+        pulse_telemetry["lubrication_status"] = "NOMINAL_FILM"
         return pulse_telemetry
 
+class Gerat58StateEngine:
+    """State machine managing the 17 interactive features, maintenance, and kinematics."""
+    def __init__(self):
+        self.current_mode = "TRANSPORT"
+        self.pneumatic_pressure_bar = 0.0
+        self.system_voltage = 0.0
+        self.barrel_temperature_celsius = 20.0
+        
+        self.hardware_sensors = {
+            "breech_block": "DOWN_OPEN",
+            "compressed_air_charged": False,
+            "extractor_claws_tripped": False
+        }
+        
+        self.oiler = Gerat58OilFeedingSystem()
+        
+        self.controls: Dict[str, Any] = {
+            "1_trigger_pedal": False,
+            "2_safety_selector": "SICHER",
+            "3_pneumatic_charging_lever": False,
+            "4_breech_lock_handle": "LOCKED",
+            "5_azimuth_handwheel_gear": "LOW",
+            "6_elevation_handwheel_gear": "LOW",
+            "7_main_power_switch": False,
+            "8_servo_engagement_clutch": False,
+            "9_radar_data_link": "LOCAL",
+            "10_fuze_setter_inductor": 0.0,
+            "11_gas_regulator_valve": 3.0,
+            "12_recoil_buffer_valve": "CLOSED",
+            "13_travel_lock_clamp": True,
+            "14_outrigger_jacks": "RETRACTED",
+            "15_spirit_levels_calibrated": False,
+            "16_sight_illuminator_knob": 0.0,
+            "17_intercom_link": "CONNECTED"
+        }
 
-# --- Integration Hook Example into your Firing Loop ---
-# To implement this, place this conditional statement into Step 7 of your loading loop:
-"""
-oil_system = Gerat58OilFeedingSystem()
-oil_status = oil_system.process_recoil_pulse(gun.barrel_temperature_celsius)
+    def change_system_mode(self, new_mode: str) -> str:
+        allowed_modes = ["TRANSPORT", "COMBAT", "MAINTENANCE"]
+        if new_mode not in allowed_modes:
+            return "Invalid mode. Choose from: TRANSPORT, COMBAT, MAINTENANCE"
+            
+        if new_mode == "COMBAT":
+            return self.setup_combat_mode()
+            
+        if new_mode == "MAINTENANCE":
+            return self.setup_maintenance_mode()
+            
+        self.current_mode = "TRANSPORT"
+        return "System Architecture Switched To: [TRANSPORT MODE]"
 
-print(f"Oiler Actuation: {oil_status['oil_pumped']} | Status: {oil_status['lubrication_status']}")
-if oil_status['lubrication_status'] in ['RESERVOIR_EMPTY', 'NOZZLE_CLOGGED']:
-    print("⚠️ BREECH FAILURE: Friction overload. Sliding wedge block seized.")
-    gun.change_system_mode("MAINTENANCE") # Force maintenance mode to clear jam
-"""
-    async def handle_transmission_cable(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
-        """
-        Manages the persistent TCP/Serial stream mimicking the physical Übertragungskabel socket connection.
-        """
-        peer = writer.get_extra_info('peername')
-        print(f"[*] Physical Übertragungskabel interface locked onto: {peer}")
+    def setup_combat_mode(self) -> str:
+        """Guard-clause extraction for combat mode deployment."""
+        if self.controls["13_travel_lock_clamp"]:
+            return "CANNOT ENTER COMBAT MODE: Travel Lock Clamp is still engaged!"
+        if self.controls["14_outrigger_jacks"] != "DEPLOYED":
+            return "CANNOT ENTER COMBAT MODE: Outrigger Support Jacks are unextended!"
+            
+        self.system_voltage = 110.0
+        self.controls["7_main_power_switch"] = True
+        self.current_mode = "COMBAT"
+        return "System Architecture Switched To: [COMBAT MODE]"
 
-        try:
-            while self.running:
-                # Read structural frame blocks (64-bytes containing data from all lines)
-                data = await reader.readexactly(64)
-                if not data:
-                    break
-                
-                parsed_state = self.parse_kabelverteiler_stream(data)
-                if parsed_state:
-                    self.telemetry_state = parsed_state
-                    # Output data visually in standard JSON format for web dashboards / UI apps
-                    print(json.dumps(self.telemetry_state, indent=2))
-                    
-                    # Echo back handshake acknowledgement via Cable Line 16 Sync
-                    writer.write(b'\x01\x37\xFF\x00') 
-                    await writer.drain()
+    def setup_maintenance_mode(self) -> str:
+        """Guard-clause extraction for maintenance mode transition."""
+        self.system_voltage = 0.0
+        self.controls["8_servo_engagement_clutch"] = False
+        self.controls["1_trigger_pedal"] = False
+        self.current_mode = "MAINTENANCE"
+        return "System Architecture Switched To: [MAINTENANCE MODE]"
 
-        except asyncio.IncompleteReadError:
-            print("[!] Stream truncated or Übertragungskabel physical disconnect.")
-        except Exception as e:
-            print(f"[!] Error processing line matrix: {e}")
-        finally:
-            print(f"[-] Dropping connection from: {peer}")
-            writer.close()
-            await writer.wait_closed()
+    def actuate_control(self, feature_name: str, value: Any) -> str:
+        if feature_name not in self.controls:
+            return "Feature not recognized."
+        
+        if feature_name == "3_pneumatic_charging_lever" and value is True:
+            self.pneumatic_pressure_bar = max(0.0, self.pneumatic_pressure_bar - 5.0)
+            self.hardware_sensors["compressed_air_charged"] = True
+            return "Feature 3 Actuated: High-pressure air accumulator flask primed."
+            
+        self.controls[feature_name] = value
+        return f"Control Modified: {feature_name} set to {value}"
 
-    async def run_server(self):
-        self.running = True
-        server = await asyncio.start_server(self.handle_transmission_cable, self.host, self.port)
-        print(f"[*] Kdo-G58 Computer listening on {self.host}:{self.port}...")
-        async with server:
-            await server.serve_forever()
+    def execute_loading_cycle(self) -> Tuple[bool, str]:
+        """Runs the step-by-step pneumatic loading sequence."""
+        if self.hardware_sensors["breech_block"] != "DOWN_OPEN":
+            return False, "RAMMING BLOCKED: Breech wedge must be fully down and open."
+            
+        if not self.hardware_sensors["compressed_air_charged"]:
+            return False, "PNEUMATIC FAILURE: Accumulator flask pressure too low."
+            
+        self.hardware_sensors["extractor_claws_tripped"] = True
+        self.hardware_sensors["breech_block"] = "UP_CLOSED"
+        return True, "Breech loaded, wedge locked home, firing pin cocked."
 
-if __name__ == "__main__":
-    receiver = Kommandogerat58Receiver()
-    try:
-        asyncio.run(receiver.run_server())
-    except KeyboardInterrupt:
-        print("\n[*] Shutting down fire control interface application.")
+    def process_firing_sequence(self, cam: MechanicalBallisticCam, range_m: float, elevation_deg: float) -> Dict[str, Any]:
+        """Evaluates safety checks, processes cam logic, calculates physics, and checks oil."""
+        if self.current_mode != "COMBAT":
+            return {"firing_status": "ABORTED", "reason": "Weapon is not in COMBAT mode."}
+            
+        if self.controls["2_safety_selector"] == "SICHER":
+            return {"firing_status": "ABORTED", "reason": "Safety selector lever is set to SICHER."}
+
+        load_success, load_msg = self.execute_loading_cycle()
+        if not load_success:
+            return {"firing_status": "ABORTED", "reason": load_msg}
+
+        lead_correction, fuze_time = cam.read_cam_geometry(range_m, elevation_deg)
+        self.controls["10_fuze_setter_inductor"] = fuze_time
+        
+        force_profile = calculate_ballistic_force(mass_kg=cam.projectile_mass_kg, velocity_m_s=cam.muzzle_velocity_m_s)
+        
+        self.hardware_sensors["breech_block"] = "DOWN_OPEN"
+        self.hardware_sensors["extractor_claws_tripped"] = False
+        self.barrel_temperature_celsius += 14.5
+        
+        oil_status = self.oiler.process_recoil_pulse(self.barrel_temperature_celsius)
+        if oil_status['lubrication_status'] in ['RESERVOIR_EMPTY', 'NOZZLE_CLOGGED']:
+            self.setup_maintenance_mode()
+            return {"firing_status": "CRITICAL FAILURE", "reason": "Breech Friction Overload. Mode forced to MAINTENANCE."}
+        
+        return {
+            "firing_status": "SUCCESSFUL 55mm DISCHARGE",
+            "calculated_lead_deg": lead_correction,
+            "inducted_fuze_time
