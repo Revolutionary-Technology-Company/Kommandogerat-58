@@ -11,6 +11,16 @@ def read_kabelverteiler():
         task.ai_channels.add_ai_voltage_chan("cDAQ1Mod1/ai0:15")
         data = task.read()
         return data
+
+import serial
+
+def read_msp500():
+    # Typically bound as ttyS1 or ttyUSB0 depending on NI-VISA config
+    ser = serial.Serial('/dev/ttyS1', baudrate=19200)
+    while True:
+        byte = ser.read()
+        # Implement 0x02 STX parsing logic here
+
 class Kommandogerat58Receiver:
     def __init__(self, host: str = "0.0.0.0", port: int = 1958):
         self.host = host
