@@ -140,7 +140,7 @@ def run_integrated_pipeline_simulation():
         print(f"  [Precision]  System Smoothness (Jerk): {motion_data['tracking_smoothness_jerk']:.2f} rad/s³")
         print(f"  [Precision]  Stabilization Error     : {motion_data['stabilization_error_urad']:.2f} µrad")
         if motion_data["system_stalled_out"]:
-            print("  ⚠️ CRITICAL FAULT: Torque Saturation! Voltage drop induced motor slip.")
+            print("  CRITICAL FAULT: Torque Saturation! Voltage drop induced motor slip.")
         else:
             print("  Tracking Stability: NOMINAL CONTROL")
         print()
