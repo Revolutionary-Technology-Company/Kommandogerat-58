@@ -5,6 +5,25 @@ import time
 from typing import Dict, Tuple
 import nidaqmx
 
+def verify_loading_step(current_step: str, hardware_sensors: dict) -> tuple[bool, str]:
+    """
+    Ensures museum visitor triggers loading mechanics in strict chronological order.
+    """
+    if current_step == "RAMMING":
+        if hardware_sensors["breech_block"] != "DOWN_OPEN":
+            return False, "❌ RAMMING BLOCKED: Breech wedge must be fully down and open before a round can enter."
+        if not hardware_sensors["compressed_air_charged"]:
+            return False, "❌ PNEUMATIC FAILURE: Accumulator flask pressure is too low to drive the rammer shoe."
+        return True, "✅ RAMMER ENGAGED: Pneumatic piston driving round forward into chamber."
+        
+    elif current_step == "BREECH_CLOSE":
+        if not hardware_sensors["extractor_claws_tripped"]:
+            return False, "❌ BREECH JAM: Cartridge rim did not hit extractors with enough velocity to release the lock."
+        return True, "✅ SNAP: Vertical wedge block locked home. Firing pin spring compressed."
+
+    return True, "Step Verified"
+
+
 def read_kabelverteiler():
     with nidaqmx.Task() as task:
         # Add all 16 channels from slot 1
