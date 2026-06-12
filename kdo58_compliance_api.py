@@ -286,4 +286,78 @@ class GPSAwareKommandogerat:
         if not self.hardware_sensors["compressed_air_charged"]:
             return False, "PNEUMATIC FAILURE: Accumulator flask pressure too low."
             
-        self.hardware_sensors["extractor_claws_tripped"]
+        self.hardware_sensors["extractor_claws_tripped"] = True
+        self.hardware_sensors["breech_block"] = "UP_CLOSED"
+        return True, "Breech loaded, wedge locked home, firing pin cocked."
+
+    def process_firing_sequence(self, range_m: float, elevation_deg: float) -> Dict[str, Any]:
+        """Calculates 3D cam output geometry based on manual API or radar feeds."""
+        if self.current_mode != "COMBAT":
+            return {"firing_status": "ABORTED", "reason": "Weapon is not in COMBAT mode."}
+            
+        if self.controls_20_point["2_safety_selector"] == "SICHER":
+            return {"firing_status": "ABORTED", "reason": "Safety selector lever is set to SICHER."}
+
+        load_success, load_msg = self.execute_loading_cycle()
+        if not load_success:
+            return {"firing_status": "ABORTED", "reason": load_msg}
+
+        actual_range = range_m
+        actual_elevation = elevation_deg
+        
+        if self.manual_override_active:
+            actual_range = self.override_data.get("target_range", range_m)
+            actual_elevation = self.override_data.get("target_elevation", elevation_deg)
+
+        lead_correction, fuze_time = self.ballistic_cam.read_cam_geometry(actual_range, actual_elevation)
+        self.controls_20_point["10_fuze_setter_inductor"] = fuze_time
+        
+        force_profile = calculate_ballistic_force(mass_kg=self.ballistic_cam.projectile_mass_kg, velocity_m_s=self.ballistic_cam.muzzle_velocity_m_s)
+        
+        self.hardware_sensors["breech_block"] = "DOWN_OPEN"
+        self.hardware_sensors["extractor_claws_tripped"] = False
+        self.barrel_temperature_celsius = self.barrel_temperature_celsius + 14.5
+        
+        oil_status = self.oiler.process_recoil_pulse(self.barrel_temperature_celsius)
+        if oil_status["lubrication_status"] in ["RESERVOIR_EMPTY", "NOZZLE_CLOGGED"]:
+            self.setup_maintenance_mode()
+            return {"firing_status": "CRITICAL FAILURE", "reason": "Breech Friction Overload. Mode forced to MAINTENANCE."}
+        
+        return {
+            "firing_status": "SUCCESSFUL 55mm DISCHARGE",
+            "calculated_lead_deg": lead_correction,
+            "inducted_fuze_time_sec": fuze_time,
+            "recoil_force_kn": force_profile["force_kn"],
+            "oil_pumped": oil_status["oil_pumped"],
+            "oil_level_pct": oil_status["oil_level_remaining_pct"]
+        }
+
+def run_compliance_demo():
+    print("RHEINMETALL KOMMANDOGERAT-58 COMPLIANCE AUDIT ENGINE")
+    
+    system = GPSAwareKommandogerat()
+    
+    print("DEPLOYING WEAPON SYSTEM")
+    print(system.actuate_control("13_travel_lock_clamp", False))
+    print(system.actuate_control("14_outrigger_jacks", "DEPLOYED"))
+    print(system.change_system_mode("COMBAT"))
+    print(system.actuate_control("3_pneumatic_charging_lever", True))
+    
+    print("EXECUTING ATMOSPHERIC SYSTEM TICK")
+    tick_result = system.process_system_tick(external_humidity=75.0, tracking_active=True)
+    print(f"Grid Power: {tick_result['voltage_v']}V | Cork Cap Status: {tick_result['cork_cap']}")
+    
+    print("TESTING MANUAL OVERRIDE API")
+    override_json = '{"manual_override": true, "override_data": {"target_range": 8000.0, "target_elevation": 45.0}}'
+    print(system.process_manual_json_override(override_json))
+    
+    print("EXECUTING FIRING LOOP")
+    report = system.process_firing_sequence(5000.0, 30.0)
+    print(f"Status: {report['firing_status']}")
+    print(f"Calculated Lead: {report.get('calculated_lead_deg', 0.0)}")
+    
+    print("GENERATING ZONING AUDIT RECORD")
+    print(system.generate_morning_calibration_audit())
+
+if __name__ == "__main__":
+    run_compliance_demo()
