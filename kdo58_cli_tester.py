@@ -103,7 +103,7 @@ def run_mock_terminal_interface():
 
     while True:
         print("\n" + "="*75)
-        print(" 💻  KOMMANDOGERÄT-58 MASTER USER CONTROLS INTERFACE INTERACTIVE SHELL")
+        print("KOMMANDOGERÄT-58 MASTER USER CONTROLS INTERFACE INTERACTIVE SHELL")
         print("="*75)
         print(f" Current Live Status  : [GIMBAL AZIMUTH: {mock_gimbal_azimuth:.2s}°] [ELEVATION: {mock_gimbal_elevation:.2s}°]")
         print(f" JSON Manual Override : [{'ENGAGED' if override_active else 'OFF - AUTOMATIC RADAR CONTROL'}]")
@@ -123,7 +123,7 @@ def run_mock_terminal_interface():
                 angle = float(angle_input)
                 
                 if not (0.0 <= angle <= 85.0):
-                    print("❌ ERROR: Launch elevation angle out of structural safety constraints (0 to 85 degrees).")
+                    print("ERROR: Launch elevation angle out of structural safety constraints (0 to 85 degrees).")
                     continue
                 
                 # Compute distance values for both rounds using physics engine
@@ -163,25 +163,25 @@ def run_mock_terminal_interface():
                         if "target_elevation" in command_packet:
                             # Bound inputs to mechanical gear safety limits
                             mock_gimbal_elevation = max(-40.0, min(85.0, float(command_packet["target_elevation"])))
-                        print("\n✅ PARSE SUCCESSFUL: JSON Override injected. Servos locked to target vectors.")
+                        print("PARSE SUCCESSFUL: JSON Override injected. Servos locked to target vectors.")
                     else:
-                        print("\n✅ PARSE SUCCESSFUL: Override set to False. Re-engaging automated radar control loop.")
+                        print("PARSE SUCCESSFUL: Override set to False. Re-engaging automated radar control loop.")
                         mock_gimbal_azimuth = 142.35
                         mock_gimbal_elevation = 32.15
                         
                 except json.JSONDecodeError:
-                    print("\n❌ MALFORMED PACKET FAILURE: Invalid JSON string layout parsed. Input discarded.")
+                    print("MALFORMED PACKET FAILURE: Invalid JSON string layout parsed. Input discarded.")
                 except Exception as e:
-                    print(f"\n❌ CONSOLE RUNTIME ERROR: {str(e)}")
+                    print(f"CONSOLE RUNTIME ERROR: {str(e)}")
                     
             elif choice == "3":
                 print("\nDisconnecting console links. Exiting terminal harness securely.")
                 break
             else:
-                print("❌ Input parameter selection unrecognized. Try again.")
+                print("Input parameter selection unrecognized. Try again.")
                 
         except (KeyboardInterrupt, EOFError):
-            print("\nTerminal connection interrupted securely.")
+            print("Terminal connection interrupted securely.")
             break
 
 
