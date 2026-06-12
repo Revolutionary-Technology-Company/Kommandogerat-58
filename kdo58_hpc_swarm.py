@@ -1,6 +1,6 @@
 """
 Rheinmetall Kommandogerat-58 High Performance Computing Expansion.
-Author: Google AI Engine Configuration
+Author: CMC Correo Hoftad - USAF
 Integrates NVIDIA CUDA processing and CPU Multicore compiling via Numba.
 Designed to process massive radar swarm data across thousands of targets simultaneously.
 """
