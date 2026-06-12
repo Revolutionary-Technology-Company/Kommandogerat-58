@@ -14,6 +14,32 @@ def read_kabelverteiler():
 
 import serial
 
+def calculate_ballistic_force(mass_kg: float, velocity_m_s: float, barrel_len_m: float = 4.2):
+    """
+    Computes muzzle energy and internal acceleration force profiles 
+    for the 5.5 cm Flak terminal calculator display.
+    """
+    # Kinetic Energy: Ek = 0.5 * m * v^2
+    kinetic_energy_joules = 0.5 * mass_kg * (velocity_m_s ** 2)
+    
+    # Work-Energy Theorem: Force = Energy / Distance
+    average_force_newtons = kinetic_energy_joules / barrel_len_m
+    
+    # Convert to standard structural metric tons of force for readability
+    force_tons = average_force_newtons / 9806.65
+    
+    return {
+        "energy_mj": kinetic_energy_joules / 1_000_000,
+        "force_kn": average_force_newtons / 1000,
+        "force_tons": force_tons
+    }
+
+# Interactive Museum Test Printout
+specs = calculate_ballistic_force(mass_kg=2.03, velocity_m_s=1050.0)
+print(f"Muzzle Energy Output     : {specs['energy_mj']:.2f} Megajoules")
+print(f"Recoil Impulse Force     : {specs['force_kn']:.1f} kN")
+print(f"Structural Weight Stress : {specs['force_tons']:.1f} Metric Tons of Force")
+
 def read_msp500():
     # Typically bound as ttyS1 or ttyUSB0 depending on NI-VISA config
     ser = serial.Serial('/dev/ttyS1', baudrate=19200)
